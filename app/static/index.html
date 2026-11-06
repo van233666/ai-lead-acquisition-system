@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ua-mini · 迷你AI获客系统</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; background: #f5f6fa; color: #2b2f3a; padding: 20px; }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color: #888; font-size: 13px; margin-bottom: 18px; }
+  .cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+  .card { flex: 1; min-width: 150px; background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.05); }
+  .card .num { font-size: 28px; font-weight: 700; color: #4c6ef5; }
+  .card .lbl { font-size: 13px; color: #888; margin-top: 4px; }
+  .panel { background: #fff; border-radius: 10px; padding: 16px; margin-bottom: 18px; box-shadow: 0 2px 8px rgba(0,0,0,.05); }
+  .panel h2 { font-size: 15px; margin-bottom: 12px; border-left: 4px solid #4c6ef5; padding-left: 8px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  input, select, button { padding: 8px 12px; border-radius: 6px; border: 1px solid #d9dde8; font-size: 14px; }
+  button { background: #4c6ef5; color: #fff; border: none; cursor: pointer; }
+  button.secondary { background: #12b886; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .cf { background: #fff; color: #2b2f3a; border: 1px solid #d9dde8; }
+  .cf.active { background: #4c6ef5; color: #fff; border-color: #4c6ef5; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eef0f5; vertical-align: top; }
+  th { background: #fafbfd; color: #666; font-weight: 600; white-space: nowrap; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+  .high { background: #ffe3e3; color: #c92a2a; }
+  .normal { background: #fff3bf; color: #a0610a; }
+  .low { background: #e9ecef; color: #666; }
+  .ok { background: #d3f9d8; color: #2b8a3e; }
+  .bar { height: 14px; border-radius: 7px; background: #4c6ef5; }
+  .msg { font-size: 13px; color: #12b886; margin-top: 8px; }
+  .err { color: #c92a2a; }
+  .sched { display: flex; gap: 16px; font-size: 13px; color: #666; flex-wrap: wrap; }
+  .sched b { color: #2b2f3a; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ua-mini · Vaner的获客工作台</h1>
+  <div class="sub">学习用复刻版：线索挖掘 → AI 意向判定 → 线索入库 → 跟进任务，对应 UAtool 的核心闭环</div>
+
+  <div class="cards" id="statCards"></div>
+
+  <div class="panel">
+    <h2>控制台</h2>
+    <div class="row">
+      <input id="keyword" placeholder="业务关键词，如：香港留学" value="香港留学">
+      <button id="btnMining">运行一次线索挖掘</button>
+      <button id="btnComments" class="secondary">跑一批评论 + AI 判定</button>
+    </div>
+    <div id="msg" class="msg"></div>
+  </div>
+
+  <div class="panel">
+    <h2>意向分布</h2>
+    <div class="row" id="distBars"></div>
+  </div>
+
+  <div class="panel">
+    <h2>线索池（最近 50 条）
+      <button style="margin-left:12px;padding:5px 10px;font-size:12px" onclick="exportCsv()">导出 CSV</button>
+    </h2>
+    <table>
+    <thead><tr><th>ID</th><th>平台</th><th>正文</th><th>需求</th><th>命中句式</th><th>状态</th><th>标签</th><th>操作</th></tr></thead>
+      <tbody id="leadRows"></tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2>评论监控（AI 判定结果）</h2>
+    <div class="row" id="commentFilters" style="margin-bottom:10px">
+      <button class="cf active" data-f="all">全部</button>
+      <button class="cf" data-f="high">高意向</button>
+      <button class="cf" data-f="normal">中意向</button>
+      <button class="cf" data-f="low">低意向</button>
+    </div>
+    <table>
+      <thead><tr><th>ID</th><th>平台</th><th>昵称</th><th>评论内容</th><th>意向</th><th>评分</th><th>命中词</th></tr></thead>
+      <tbody id="commentRows"></tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2>跟进任务</h2>
+    <table>
+      <thead><tr><th>ID</th><th>关联线索</th><th>标题</th><th>计划时间</th><th>状态</th><th>操作</th></tr></thead>
+      <tbody id="taskRows"></tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2>后台调度器状态</h2>
+    <div class="sched" id="schedInfo"></div>
+  </div>
+</div>
+
+<script>
+const $ = (sel) => document.querySelector(sel);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+
+async function api(url, opts) {
+  const r = await fetch(url, opts);
+  const j = await r.json();
+  if (j.code !== 0) throw new Error(j.message || "请求失败");
+  return j.data;
+}
+
+function tag(level) {
+  const map = { high: ["high", "高意向"], normal: ["normal", "中意向"], low: ["low", "低意向"] };
+  const [cls, text] = map[level] || ["low", level];
+  return `<span class="tag ${cls}">${text}</span>`;
+}
+
+function tagsHtml(id, list) {
+  const chips = (list || []).map(t =>
+    `<span style="display:inline-block;padding:2px 8px;margin:2px 4px 2px 0;border-radius:10px;background:#e7f5ff;color:#1971c2;font-size:12px">${esc(t)}<b style="cursor:pointer;color:#868e96;margin-left:6px" onclick="delTag(${id}, '${esc(t)}')">×</b></span>`
+  ).join("");
+  return `${chips}<button style="padding:2px 8px;font-size:12px" onclick="addTag(${id})">+ 标签</button>`;
+}
+
+async function delTag(id, name) {
+  await api(`/api/leads/${id}/tags?name=${encodeURIComponent(name)}`, { method: "DELETE" });
+  await loadAll();
+}
+
+function exportCsv() {
+  window.location.href = "/api/leads/export";
+}
+
+async function addTag(id) {
+  const name = prompt("给这条线索打什么标签？（例：港三冲刺 / 预算敏感）");
+  if (!name) return;
+  await api(`/api/leads/${id}/tags?name=${encodeURIComponent(name)}`, { method: "POST" });
+  await loadAll();
+}
+
+async function loadAll() {
+  await loadStats();
+  await loadLeads();
+  await loadComments();
+  await loadTasks();
+}
+
+async function loadStats() {
+  const s = await api("/api/stats");
+  $("#statCards").innerHTML = [
+    ["线索总数", s.total], ["高意向", s.high], ["已触达", s.contacted], ["待办跟进", s.pending_tasks]
+  ].map(([l, n]) => `<div class="card"><div class="num">${n}</div><div class="lbl">${l}</div></div>`).join("");
+
+  // 意向分布条形（CSS 实现，离线可用）
+  const dist = { ...s.intent_dist };
+  const max = Math.max(1, ...Object.values(dist));
+  const order = [["high", "高意向"], ["normal", "中意向"], ["low", "低意向"]];
+  $("#distBars").innerHTML = order.map(([k, label]) => `
+    <div style="flex:1;min-width:160px">
+      <div style="font-size:13px;margin-bottom:4px">${label}（${dist[k] || 0}）</div>
+      <div style="background:#eef0f5;border-radius:7px;height:14px">
+        <div class="bar" style="width:${Math.round((dist[k] || 0) / max * 100)}%"></div>
+      </div>
+    </div>`).join("");
+
+  const sc = s.scheduler;
+  $("#schedInfo").innerHTML = `
+    <span>运行中：<b>${sc.running ? "是" : "否"}</b></span>
+    <span>上次巡检：<b>${sc.last_craft_at ? new Date(sc.last_craft_at).toLocaleTimeString() : "—"}</b></span>
+    <span>下次巡检：<b>${sc.next_craft_at ? new Date(sc.next_craft_at).toLocaleTimeString() : "—"}</b></span>
+    <span>上次结果：<b>${esc(sc.last_result || "—")}</b></span>`;
+}
+
+async function loadLeads() {
+  const leads = await api("/api/leads?limit=50");
+  $("#leadRows").innerHTML = leads.map(l => `
+    <tr>
+      <td>${l.id}</td><td>${esc(l.platform)}</td>
+      <td>${esc(l.content)}</td>
+      <td>${tag(l.demand_level)}</td>
+      <td>${esc(l.matched_cue || "—")}</td>
+      <td>${esc(l.status)}</td>
+      <td>${tagsHtml(l.id, l.tags)}</td>
+      <td>
+        <button style="padding:4px 8px;font-size:12px" onclick="mark('${l.id}','converted')">转化</button>
+        <button style="padding:4px 8px;font-size:12px;background:#fa5252" onclick="mark('${l.id}','invalid')">无效</button>
+        <button style="padding:4px 8px;font-size:12px;background:#12b886" onclick="follow('${l.id}')">建跟进</button>
+      </td>
+    </tr>`).join("") || `<tr><td colspan="8" style="color:#999">暂无线索，点上面按钮跑一次挖掘</td></tr>`;
+}
+
+let commentsCache = [];
+let commentFilter = "all";
+
+function renderComments() {
+  const rows = commentsCache.filter(c => commentFilter === "all" || c.intent_level === commentFilter);
+  $("#commentRows").innerHTML = rows.map(c => `
+    <tr>
+      <td>${c.id}</td><td>${esc(c.platform)}</td><td>${esc(c.nickname)}</td>
+      <td>${esc(c.content)}</td>
+      <td>${tag(c.intent_level)}</td><td>${c.intent_score}</td>
+      <td>${esc(c.matched_keywords || "—")}</td>
+    </tr>`).join("") || `<tr><td colspan="7" style="color:#999">该分组暂无评论，点上面按钮跑一批</td></tr>`;
+  document.querySelectorAll("#commentFilters .cf").forEach(b =>
+    b.classList.toggle("active", b.dataset.f === commentFilter));
+}
+
+async function loadComments() {
+  commentsCache = await api("/api/comments?limit=50");
+  renderComments();
+}
+
+document.querySelectorAll("#commentFilters .cf").forEach(b =>
+  b.onclick = () => { commentFilter = b.dataset.f; renderComments(); });
+
+async function loadTasks() {
+  const ts = await api("/api/followups?limit=30");
+  $("#taskRows").innerHTML = ts.map(t => `
+    <tr>
+      <td>${t.id}</td><td>线索#${t.lead_id}</td>
+      <td>${esc(t.title)}<br><span style="color:#888;font-size:12px">${esc((t.content||"").slice(0,80))}…</span></td>
+      <td>${t.scheduled_at ? new Date(t.scheduled_at).toLocaleString() : "—"}</td>
+      <td>${esc(t.status)}</td>
+      <td>${t.status === "pending" ? `<button style="padding:4px 8px;font-size:12px" onclick="done('${t.id}')">完成</button>` : "—"}</td>
+    </tr>`).join("") || `<tr><td colspan="6" style="color:#999">暂无跟进任务，高意向线索会自动生成</td></tr>`;
+}
+
+async function mark(id, status) { await api(`/api/leads/${id}/status?status=${status}`, { method: "PATCH" }); await loadAll(); }
+async function follow(id) { await api(`/api/leads/${id}/followups`, { method: "POST" }); await loadAll(); }
+async function done(id) { await api(`/api/followups/${id}/done`, { method: "POST" }); await loadAll(); }
+
+$("#btnMining").onclick = async () => {
+  const btn = $("#btnMining"); btn.disabled = true;
+  try {
+    const r = await api(`/api/mining/run?keyword=${encodeURIComponent($("#keyword").value)}`, { method: "POST" });
+    $("#msg").textContent = `挖掘完成：${r.message}；自动建跟进 ${r.follow_ups} 条`;
+  } catch (e) { $("#msg").textContent = "失败：" + e.message; $("#msg").className = "msg err"; }
+  btn.disabled = false;
+  await loadAll();
+};
+
+$("#btnComments").onclick = async () => {
+  const btn = $("#btnComments"); btn.disabled = true;
+  try {
+    const r = await api("/api/comments/analyze", { method: "POST" });
+    $("#msg").textContent = `评论批次完成：共 ${r.total} 条，高意向 ${r.high} 条`;
+  } catch (e) { $("#msg").textContent = "失败：" + e.message; $("#msg").className = "msg err"; }
+  btn.disabled = false;
+  await loadAll();
+};
+
+loadAll().catch(e => { $("#msg").textContent = "加载失败：" + e.message; });
+</script>
+</body>
+</html>

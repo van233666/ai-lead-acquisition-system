@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# 本地数据库（含运行数据，不入库；首次启动会自动建表并灌入演示语料）
+*.db
+*.db.bak
+*.sqlite3
+
+# IDE / 系统
+.idea/
+.vscode/
+Thumbs.db
+Desktop.ini
+
+# 日志
+*.log
